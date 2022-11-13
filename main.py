@@ -3,21 +3,26 @@ from copy import copy
 import music21 as music
 
 import mido
-from mido import Message
+from mido import Message, MidiTrack, MetaMessage
 from math import sqrt
+from random import randint, choice
+from typing import List, Tuple
 
-INP = "barbiegirl_mono.mid"
-# INP = "input3.mid"
+# INP = "barbiegirl_mono.mid"
+INP = "input1.mid"
 # OUT = "output.mid"
 
 res = music.converter.parse(INP)
 
-print("Tonic:", res.analyze('key'))
-print("Tonic:", res.analyze('key').tonic.midi)
+# print("Tonic:", res.analyze('key'))
+# print("Tonic:", res.analyze('key').tonic.midi)
 
-file = mido.MidiFile(INP, clip=True)
+BARLEN_DIVIDED_4 = 384
 
-BARLEN_devide_4 = 384
+
+def mido_to_note(mido_note):
+    return mido_note % 12
+
 
 OFFSETS = {
     'minor': {
@@ -38,59 +43,66 @@ OFFSETS = {
 note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
-def get_average_velocity(mido_file: mido.MidiFile):
-    list_of_velocities = list(map(lambda x: x.velocity,
-                                  filter(lambda x: not x.is_meta and x.type == "note_on", mido_file)))
-    return sum(list_of_velocities) / len(list_of_velocities)
-
-
-def get_tempo(mido_file: mido.MidiFile):
-    element = list(map(lambda x: x,
-                       filter(lambda x: x.is_meta and x.type == "set_tempo", mido_file)))[0]
-    return element.tempo
-
-
-# in assignment was given that our track has 4/4 time signature
-def get_chord_duration(mido_file: mido.MidiFile):
-    return mido_file.ticks_per_beat * 2
-
-
-def mido_to_note(mido_note: int):
-    return mido_note % 12
-
-
 def circle_permutation(array):
     return array[1:] + [array[0]]
 
 
 class Chord:
-    def __init__(self, root_note, name_offset, is_diminished=False):
+    def __init__(self, root_note, lad, step):
         self.root_note = root_note
-        self.name_offset = name_offset
-        self.is_diminished = is_diminished
+        self.lad = lad  # major or minor
+        self.step = step  # step of note
+        self.notes = [0, 0, 0]
 
     def get_triad(self):
-        return [(self.root_note + offset) % 12 for offset in OFFSETS[self.name_offset]['triad']]
+        self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS[self.lad]['triad']]
+        return self
 
     def get_first_inversion(self):
-        return [(self.root_note + offset) % 12 for offset in OFFSETS[self.name_offset]['first']]
+        self.notes = [self.root_note + offset for offset in OFFSETS[self.lad]['first']]
+        return self
 
     def get_second_inversion(self):
-        return [(self.root_note + offset) % 12 for offset in OFFSETS[self.name_offset]['second']]
+        self.notes = [self.root_note + offset for offset in OFFSETS[self.lad]['second']]
+        return self
 
     def get_dim(self):
-        return [(self.root_note + offset) % 12 for offset in OFFSETS["diminished"]]
+        self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS["diminished"]]
+        return self
 
     def get_sus2(self):
-        return [(self.root_note + offset) % 12 for offset in OFFSETS["sus2"]]
+        self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS["sus2"]]
+        return self
 
     def get_sus4(self):
-        return [(self.root_note + offset) % 12 for offset in OFFSETS["sus4"]]
+        self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS["sus4"]]
+        return self
+
+    def is_major(self):
+        return self.lad == 'major'
+
+    def is_minor(self):
+        return self.lad == 'minor'
+
+    def is_first_inversion(self):
+        return self.notes == [self.root_note + offset for offset in OFFSETS[self.lad]['first']]
+
+    def is_second_inversion(self):
+        return self.notes == [self.root_note + offset for offset in OFFSETS[self.lad]['second']]
+
+    def is_dim(self):
+        return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["diminished"]]
+
+    def is_sum2(self):
+        return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["sus2"]]
+
+    def is_sum4(self):
+        return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["sus4"]]
 
     def __str__(self):
         arr = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-        return arr[self.root_note % 12] + ('m' if self.name_offset == 'minor' else '') + (
-            '˙' if self.is_diminished else "")
+        return arr[self.root_note % 12] + ('m' if self.lad == 'minor' else '') + (
+            '˙' if self.is_dim() else "")
 
 
 class MainKey:
@@ -117,7 +129,7 @@ class MainKey:
         for i, track in enumerate(mido_file.tracks):
             for msg in track:
                 notes.append(msg)
-        print(*notes, sep="\n")
+        # print(*notes, sep="\n")
         self.duration = [0 for _ in range(12)]
         for el in notes:
             if el.type == "note_off":
@@ -143,7 +155,7 @@ class MainKey:
 
         return sum_numerator / sqrt(sum_denum_x * sum_denum_y)
 
-    def get_keys(self):
+    def get_key(self):
         '''
         http://rnhart.net/articles/key-finding/
         :return: key
@@ -156,7 +168,7 @@ class MainKey:
             d[el] = -1e9
             d[el + 'm'] = -1e9
         major_x = self.major_profile
-        print(self.duration)
+        # print(self.duration)
         dur = copy(self.duration)
         for i in range(12):
             r = self._calculate_correlation(list(map(lambda x: x[1], major_x)),
@@ -181,7 +193,7 @@ class MainKey:
             dur = circle_permutation(dur)
 
         key_sym = list(sorted(d.items(), key=lambda x: -x[1]))[0][0]
-        print(note_names[key_note])
+        # print(note_names[key_note])
         return key_note, "major" if is_major else "minor"
 
 
@@ -192,57 +204,239 @@ class GoodChords:
 
     def __init__(self, key_note):
         self.key_note, self.lad = key_note
+        self.good_chords = self.get()
 
     def get(self):
         offsets = self.major if self.lad == "major" else self.minor
-        good_notes = []
+        good_chords = []
         if self.lad == "major":
-            good_notes.append(Chord((self.key_note + offsets[0]) % 12, "major"))
-            good_notes.append(Chord((self.key_note + offsets[1]) % 12, "minor"))
-            good_notes.append(Chord((self.key_note + offsets[2]) % 12, "minor"))
-            good_notes.append(Chord((self.key_note + offsets[3]) % 12, "major"))
-            good_notes.append(Chord((self.key_note + offsets[4]) % 12, "major"))
-            good_notes.append(Chord((self.key_note + offsets[5]) % 12, "minor"))
-            good_notes.append(Chord((self.key_note + offsets[6]) % 12, "major", is_diminished=True))
+            good_chords.append(Chord((self.key_note + offsets[0]) % 12, "major", 1).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[1]) % 12, "minor", 2).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[2]) % 12, "minor", 3).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[3]) % 12, "major", 4).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[4]) % 12, "major", 5).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[5]) % 12, "minor", 6).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[6]) % 12, "major", 7).get_dim())
         if self.lad == "minor":
-            good_notes.append(Chord((self.key_note + offsets[0]) % 12, "minor"))
-            good_notes.append(Chord((self.key_note + offsets[1]) % 12, "major", is_diminished=True))
-            good_notes.append(Chord((self.key_note + offsets[2]) % 12, "major"))
-            good_notes.append(Chord((self.key_note + offsets[3]) % 12, "minor"))
-            good_notes.append(Chord((self.key_note + offsets[4]) % 12, "minor"))
-            good_notes.append(Chord((self.key_note + offsets[5]) % 12, "major"))
-            good_notes.append(Chord((self.key_note + offsets[6]) % 12, "major"))
-        for el in good_notes:
-            print(el, end=" ")
+            good_chords.append(Chord((self.key_note + offsets[0]) % 12, "minor", 1).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[1]) % 12, "major", 2).get_dim())
+            good_chords.append(Chord((self.key_note + offsets[2]) % 12, "major", 3).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[3]) % 12, "minor", 4).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[4]) % 12, "minor", 5).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[5]) % 12, "major", 6).get_triad())
+            good_chords.append(Chord((self.key_note + offsets[6]) % 12, "major", 7).get_triad())
+        return good_chords
+
+    def get_tuples(self):
+        # for test, need changes
+        return [el.get_triad() for el in self.good_chords]
 
 
-main_key = MainKey(file)
-print(main_key.get_keys(), sep="\n")
-good_Chords = GoodChords((0, "minor"))
-good_Chords.get()
-print("\n")
+class Song:
+    def __init__(self, name_of_midi):
+        self.mido_file = mido.MidiFile(name_of_midi, clip=True)
+        # for el in self.mido_file:
+        #     print(el)
+        self.key = MainKey(self.mido_file)
+        self.begin = self.mido_file.tracks[1][2].time
+        self.len_in_bars4 = 0
+        self.devided = self.divide_track()
+
+    def get_average_velocity(self):
+        list_of_velocities = list(map(lambda x: x.velocity,
+                                      filter(lambda x: not x.is_meta and x.type == "note_on", self.mido_file)))
+        return sum(list_of_velocities) // len(list_of_velocities)
+
+    def get_tempo(self):
+        element = list(map(lambda x: x,
+                           filter(lambda x: x.is_meta and x.type == "set_tempo", self.mido_file)))[0]
+        return element.tempo
+
+    # in assignment was given that our track has 4/4 time signature
+    def get_chord_duration(self):
+        return self.mido_file.ticks_per_beat * 2
+
+    def get_average_octave(self) -> int:
+        amount = 0
+        sum_octaves = 0
+        for i, track in enumerate(self.mido_file.tracks):
+            for msg in track:
+                if msg.type == "note_on":
+                    amount += 1
+                    sum_octaves += msg.note // 12
+        return sum_octaves // amount
+
+    def get_key(self):
+        return self.key.get_key()
+
+    def divide_track(self):
+        notes_on = list(map(lambda x: (mido_to_note(x.note), x.time),
+                            filter(lambda x: x.type == 'note_on', self.mido_file.tracks[1][2:])))
+        notes_off = list(map(lambda x: (mido_to_note(x.note), x.time),
+                             filter(lambda x: x.type == 'note_off', self.mido_file.tracks[1][2:])))
+        zipped = list(zip(notes_on, notes_off))
+        # print(*zipped[:6], sep="\n")
+        # zipped = zipped[:6]
+        sum_bars = 0
+        for (note, btime), (note, etime) in zipped:
+            sum_bars += btime + etime
+
+        result = [(BARLEN_DIVIDED_4 * i, BARLEN_DIVIDED_4 * (i + 1), []) for i in
+                  range(sum_bars // BARLEN_DIVIDED_4 + 1)]
+        self.len_in_bars4 = sum_bars // BARLEN_DIVIDED_4 + 1
+        cur_sum = 0
+        index = 0
+        for (note, btime), (note, etime) in zipped:
+            cur_sum += btime
+            for ind, (begin, end, _) in enumerate(result):
+                if begin <= cur_sum < end:
+                    result[ind][2].append(note)
+                    if cur_sum + etime > end:
+                        result[(cur_sum + etime) // BARLEN_DIVIDED_4][2].append(note)
+            cur_sum += etime
+        # print(result)
+        return list(map(lambda x: x[2], result))
+
+    def save_with_accompaniment(self, chords):
+        average_velocity = self.get_average_velocity()
+        average_octave = self.get_average_octave()
+        accompaniment = mido.MidiTrack()
+        accompaniment.append(MetaMessage('track_name', name='Accompaniment', time=0))
+        accompaniment.append(Message("program_change", channel=0, program=1, time=0))
+
+        accompaniment.append(
+            Message("note_on", channel=0, note=average_octave * 12 + chords[0][0], velocity=average_velocity,
+                    time=self.begin))
+        accompaniment.append(
+            Message("note_on", channel=0, note=average_octave * 12 + chords[0][1], velocity=average_velocity, time=0))
+        accompaniment.append(
+            Message("note_on", channel=0, note=average_octave * 12 + chords[0][2], velocity=average_velocity, time=0))
+
+        accompaniment.append(
+            Message("note_off", channel=0, note=average_octave * 12 + chords[0][0], velocity=0, time=BARLEN_DIVIDED_4))
+        accompaniment.append(
+            Message("note_off", channel=0, note=average_octave * 12 + chords[0][1], velocity=0, time=0))
+        accompaniment.append(
+            Message("note_off", channel=0, note=average_octave * 12 + chords[0][2], velocity=0, time=0))
+
+        for first, second, third in chords[1:]:
+            accompaniment.append(
+                Message("note_on", channel=0, note=average_octave * 12 + first, velocity=average_velocity, time=0))
+            accompaniment.append(
+                Message("note_on", channel=0, note=average_octave * 12 + second, velocity=average_velocity, time=0))
+            accompaniment.append(
+                Message("note_on", channel=0, note=average_octave * 12 + third, velocity=average_velocity, time=0))
+
+            accompaniment.append(
+                Message("note_off", channel=0, note=average_octave * 12 + first, velocity=0, time=BARLEN_DIVIDED_4))
+            accompaniment.append(
+                Message("note_off", channel=0, note=average_octave * 12 + second, velocity=0, time=0))
+            accompaniment.append(
+                Message("note_off", channel=0, note=average_octave * 12 + third, velocity=0, time=0))
+        accompaniment.append(MetaMessage('end_of_track', time=0))
+        self.mido_file.tracks.append(accompaniment)
+        self.mido_file.save("1.midi")
+
+
+class Gene:  # аккорд
+    def __init__(self, chord):
+        self.chord: Chord = chord
+
+    def mutate(self):
+        mutate_name = ["inv1", "inv2", "sus2", "sus4"]
+        if self.chord.is_dim():
+            return
+
+        type_mutation = choice(mutate_name)
+
+        if type_mutation == "sus2":
+            if (self.chord.is_major() and self.chord.step not in [3, 7]) \
+                    or (self.chord.is_minor() and self.chord.step not in [2, 5]):
+                self.chord = self.chord.get_sus2()
+        elif type_mutation == "sus4":
+            if (self.chord.is_major() and self.chord.step not in [4, 7]) \
+                    or (self.chord.is_minor() and self.chord.step not in [2, 6]):
+                self.chord = self.chord.get_sus4()
+        elif type_mutation == "inv1":
+            self.chord = self.chord.get_first_inversion()
+        elif type_mutation == "inv2":
+            self.chord = self.chord.get_second_inversion()
+
+
+class Chromosome:
+    genes = []
+
+    def __init__(self, genes):
+        self.genes = genes
+
+    def fitness(self) -> int:
+        pass
+
+
+class Generator:
+    # populaton
+    # кол-во поколений
+    def __init__(self, file_name, population_size):
+        self.song = Song(file_name)
+        self.tonic_accords = GoodChords(self.song.get_key()).get()
+        self.population_size = population_size
+
+    def create_initial_population(self):
+        initial_population = [Chromosome([Gene(choice(self.tonic_accords)) for _ in range(self.song.len_in_bars4)])
+                              for _ in range(self.population_size)]
+
+        return initial_population
+
+    def crossover(self, first_chromosome, second_chromosome):
+        result = first_chromosome.genes[:len(first_chromosome.genes) // 2]
+        result = result + second_chromosome[len(result):]
+        return Chromosome(result)
+
+
+generator = Generator(INP, 10)
+# a = generator.create_initial_population()
+
+
+a = [1, 2, 3]
+b = [3, 4, 5]
+
+
+def cross(a, b):
+    arr = a[:len(a) // 2]
+    arr = arr + b[len(arr):]
+    print(arr)
+
+
+cross(a, b)
+
+# song = Song(INP)
+# print(song.get_key(), sep="\n")
+# good_Chords = GoodChords(song.get_key())
+# print("Good tuples:", good_Chords.get_tuples())
+# print("\n")
 # arr = [1, 2, 3]
 # print(circle_permutation(arr))
 
-print(get_average_velocity(file))
-print(get_tempo(file))
-print(get_chord_duration(file))
+# print(song.get_average_velocity())
+# print(song.get_tempo())
+# print(song.get_chord_duration())
 
+# print("Octava", song.get_average_octave())
+#
+# print(song.divide_track())
+# print(list(zip(range(len(note_names)), note_names)))
+# song.save_with_accompaniment(good_Chords.get_tuples())
 # print(file)
 print()
 # for el in file:
 #     print(type(el), el)
-out = mido.MidiFile()
-track_out = mido.MidiTrack()
-out.tracks.append(track_out)
-track_out.append(Message('note_on', channel=0, note=68, velocity=50, time=0))
-track_out.append(Message('note_off', channel=0, note=68, velocity=50, time=500))
+# out = mido.MidiFile()
+# track_out = mido.MidiTrack()
+# out.tracks.append(track_out)
+# track_out.append(Message('note_on', channel=0, note=68, velocity=50, time=0))
+# track_out.append(Message('note_off', channel=0, note=68, velocity=50, time=500))
 # out.save(OUT)
 
-arr = [0]
-for el in [2, 1, 2, 2, 1, 2, 2]:
-    arr.append(arr[-1] + el)
-print(arr)
 """
     Message('note_on', channel=0, note=68, velocity=50, time=0),
     Message('note_on', channel=0, note=64, velocity=50, time=0),
