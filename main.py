@@ -6,7 +6,8 @@ import mido
 from mido import Message, MidiTrack, MetaMessage
 from math import sqrt
 from random import randint, choice
-from typing import List, Tuple
+from typing import List, Tuple, Type
+from copy import deepcopy
 
 # INP = "barbiegirl_mono.mid"
 INP = "input1.mid"
@@ -93,16 +94,22 @@ class Chord:
     def is_dim(self):
         return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["diminished"]]
 
-    def is_sum2(self):
+    def is_sus2(self):
         return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["sus2"]]
 
-    def is_sum4(self):
+    def is_sus4(self):
         return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["sus4"]]
 
     def __str__(self):
         arr = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         return arr[self.root_note % 12] + ('m' if self.lad == 'minor' else '') + (
             '˙' if self.is_dim() else "")
+
+    def __contains__(self, note: int):
+        return note in self.notes
+
+    def __eq__(self, other):
+        return self.notes == other.notes
 
 
 class MainKey:
@@ -240,7 +247,7 @@ class Song:
         self.key = MainKey(self.mido_file)
         self.begin = self.mido_file.tracks[1][2].time
         self.len_in_bars4 = 0
-        self.devided = self.divide_track()
+        self.divided = self.divide_track()
 
     def get_average_velocity(self):
         list_of_velocities = list(map(lambda x: x.velocity,
@@ -283,7 +290,7 @@ class Song:
 
         result = [(BARLEN_DIVIDED_4 * i, BARLEN_DIVIDED_4 * (i + 1), []) for i in
                   range(sum_bars // BARLEN_DIVIDED_4 + 1)]
-        self.len_in_bars4 = sum_bars // BARLEN_DIVIDED_4 + 1
+        self.len_in_bars4 = sum_bars // BARLEN_DIVIDED_4
         cur_sum = 0
         index = 0
         for (note, btime), (note, etime) in zipped:
@@ -335,7 +342,7 @@ class Song:
                 Message("note_off", channel=0, note=average_octave * 12 + third, velocity=0, time=0))
         accompaniment.append(MetaMessage('end_of_track', time=0))
         self.mido_file.tracks.append(accompaniment)
-        self.mido_file.save("1.midi")
+        self.mido_file.save("result_tvinkln_1.midi")
 
 
 class Gene:  # аккорд
@@ -362,53 +369,144 @@ class Gene:  # аккорд
         elif type_mutation == "inv2":
             self.chord = self.chord.get_second_inversion()
 
+    def __contains__(self, item: int):
+        return item in self.chord
+
+    def __eq__(self, other):
+        return self.chord == other.chord
+
 
 class Chromosome:
-    genes = []
+    genes: List[Gene] = []
 
     def __init__(self, genes):
         self.genes = genes
 
-    def fitness(self) -> int:
-        pass
+    def fitness(self, divided_song, tonic_chords) -> int:
+        counter = 0
+
+        # matching original quarter notes and generated
+
+        for quarter, gen in zip(divided_song, self.genes):
+            flag_no_match = True
+            for note in quarter:
+                if note in gen:
+                    flag_no_match = True
+                    counter += 12
+            counter -= (10 if flag_no_match else 0)
+
+        # check for two sequential chords
+        for i in range(len(self.genes) - 1):
+            if self.genes[i] == self.genes[i + 1]:
+                counter -= 10
+            else:
+                counter += 15
+
+        # check for tonic
+        for gene in self.genes:
+            if gene.chord in tonic_chords:
+                counter += 6
+
+        # if chords are not diminished and not sus2 and not sus4
+        for gene in self.genes:
+            if not gene.chord.is_dim() and not gene.chord.is_sus2() and not gene.chord.is_sus4():
+                counter += 6
+
+        # if song is empty and prev chord == current chord
+        for i in range(1, len(self.genes)):
+            if len(divided_song[i]) == 0 and self.genes[i] == self.genes[i - 1]:
+                counter += 10
+            else:
+                counter += 4
+
+        return counter
+
+    def mutate(self):
+        for i in range(len(self.genes)):
+            self.genes[i].mutate()
+        return self
 
 
 class Generator:
     # populaton
     # кол-во поколений
-    def __init__(self, file_name, population_size):
-        self.song = Song(file_name)
-        self.tonic_accords = GoodChords(self.song.get_key()).get()
+    def __init__(self, file_name: str, population_size: int, number_of_generations: int):
+        self.song: Song = Song(file_name)
+        self.tonic_chords = GoodChords(self.song.get_key()).get()
         self.population_size = population_size
+        self.number_of_generations = number_of_generations
+
+        self.generate()
 
     def create_initial_population(self):
-        initial_population = [Chromosome([Gene(choice(self.tonic_accords)) for _ in range(self.song.len_in_bars4)])
+        initial_population = [Chromosome([Gene(choice(self.tonic_chords)) for _ in range(self.song.len_in_bars4)])
                               for _ in range(self.population_size)]
 
         return initial_population
 
-    def crossover(self, first_chromosome, second_chromosome):
-        result = first_chromosome.genes[:len(first_chromosome.genes) // 2]
-        result = result + second_chromosome[len(result):]
+    def _crossover(self, first_chromosome, second_chromosome) -> Chromosome:
+        result = first_chromosome.genes[:randint(0, len(first_chromosome.genes) - 1)]
+        result = result + second_chromosome.genes[len(result):]
         return Chromosome(result)
 
+    def crossover_two_child(self, first_parent: Chromosome, second_parent: Chromosome) -> Tuple[Chromosome, Chromosome]:
+        first_child = self._crossover(first_parent, second_parent)
+        second_child = self._crossover(second_parent, first_parent)
+        return first_child, second_child
 
-generator = Generator(INP, 10)
+    def get_population_fitness(self, population: List[Chromosome]) -> List[int]:
+        return [chromosome.fitness(self.song.divided, self.tonic_chords) for chromosome in population]
+
+    def next_population(self, prev_population: List[Chromosome]) -> List[Chromosome]:
+        new_population = deepcopy(prev_population)
+        zipped = list(sorted(zip(self.get_population_fitness(prev_population), prev_population), key=lambda x: -x[0]))
+
+        best_parent1, best_parent2 = zipped[0][1], zipped[1][1]
+        for _ in range(self.population_size):
+            child1, child2 = self.crossover_two_child(best_parent1,
+                                                      best_parent2)  # can try with random from prev_population
+            new_population.append(child1)
+            new_population.append(child2)
+            new_population.append(deepcopy(child1).mutate())
+            new_population.append(deepcopy(child2).mutate())
+
+        zipped_huge_population = list(sorted(zip(self.get_population_fitness(new_population), new_population), key=lambda x: -x[0]))
+        new_result_population = list(map(lambda x: x[1], zipped_huge_population))[:self.population_size]
+
+        return new_result_population
+
+    def generate(self):
+        population = self.create_initial_population()
+        for _ in range(self.number_of_generations):
+            population = self.next_population(population)
+
+        best_chromosome = population[0]
+        best_chromosome_chords = list(map(lambda x: x.chord.notes, best_chromosome.genes))
+        self.song.save_with_accompaniment(best_chromosome_chords)
+
+
+generator = Generator(INP, 1000, 100)  # размер популяции, кол-во поколений
 # a = generator.create_initial_population()
 
 
-a = [1, 2, 3]
-b = [3, 4, 5]
+# a = [1, 2, 3]
+# b = [3, 4, 5]
+# print(a[:3])
 
 
-def cross(a, b):
-    arr = a[:len(a) // 2]
-    arr = arr + b[len(arr):]
-    print(arr)
+# def cross(a, b):
+#     arr = a[:len(a) // 2]
+#     arr = arr + b[len(arr):]
+#     print(arr)
 
 
-cross(a, b)
+# cross(a, b)
 
+# gene1 = Gene(Chord(0, "major", 1).get_triad())
+# gene2 = Gene(Chord(0, "major", 1).get_triad())
+# print(gene1.chord == gene2.chord)
+
+# print(randint(1, 2))
 # song = Song(INP)
 # print(song.get_key(), sep="\n")
 # good_Chords = GoodChords(song.get_key())
