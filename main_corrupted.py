@@ -1,20 +1,20 @@
 from copy import copy
 
-import music21 as music
+# import music21 as music
 
 import mido
 from mido import Message, MidiTrack, MetaMessage
 from math import sqrt
-from random import randint, choice
+from random import randint, choice, shuffle
 from typing import List, Tuple, Type
 from copy import deepcopy
 from tqdm import tqdm
 
 INP = "barbiegirl_mono.mid"
-# INP = "input1.mid"
+# INP = "input3.mid"
 # OUT = "output.mid"
 
-res = music.converter.parse(INP)
+# res = music.converter.parse(INP)
 
 # print("Tonic:", res.analyze('key'))
 # print("Tonic:", res.analyze('key').tonic.midi)
@@ -137,13 +137,11 @@ class MainKey:
         for i, track in enumerate(mido_file.tracks):
             for msg in track:
                 notes.append(msg)
-        # print(*notes, sep="\n")
         self.duration = [0 for _ in range(12)]
         for el in notes:
             if el.type == "note_off":
                 self.duration[mido_to_note(el.note)] += el.time
         self.duration = list(zip(self.note_names, self.duration))
-        # self.duration = list(zip(self.note_names, [432, 231, 0, 405, 12, 316, 4, 126, 612, 0, 191, 1]))
 
     def _calculate_correlation(self, x, y):
         mean_x = sum(x) / len(x)
@@ -171,17 +169,16 @@ class MainKey:
         max_r = -1e9
         is_major = False
         key_note = 0
-        d = dict()
-        for el in self.note_names:
-            d[el] = -1e9
-            d[el + 'm'] = -1e9
+        # d = dict()
+        # for el in self.note_names:
+        #     d[el] = -1e9
+        #     d[el + 'm'] = -1e9
         major_x = self.major_profile
-        # print(self.duration)
         dur = copy(self.duration)
         for i in range(12):
             r = self._calculate_correlation(list(map(lambda x: x[1], major_x)),
                                             list(map(lambda x: x[1], dur)))
-            d[dur[0][0]] = max(d[dur[0][0]], r)
+            # d[dur[0][0]] = max(d[dur[0][0]], r)
             if max_r < r:
                 max_r = r
                 is_major = True
@@ -193,15 +190,14 @@ class MainKey:
         for i in range(12):
             r = self._calculate_correlation(list(map(lambda x: x[1], minor_x)),
                                             list(map(lambda x: x[1], dur)))
-            d[dur[0][0] + 'm'] = max(d[dur[0][0] + 'm'], r)
+            # d[dur[0][0] + 'm'] = max(d[dur[0][0] + 'm'], r)
             if max_r < r:
                 max_r = r
                 is_major = False
                 key_note = i
             dur = circle_permutation(dur)
 
-        key_sym = list(sorted(d.items(), key=lambda x: -x[1]))[0][0]
-        # print(note_names[key_note])
+        # key_sym = list(sorted(d.items(), key=lambda x: -x[1]))[0][0]
         return key_note, "major" if is_major else "minor"
 
 
@@ -260,9 +256,9 @@ class Song:
                            filter(lambda x: x.is_meta and x.type == "set_tempo", self.mido_file)))[0]
         return element.tempo
 
-    # in assignment was given that our track has 4/4 time signature
-    def get_chord_duration(self):
-        return self.mido_file.ticks_per_beat * 2
+    # # in assignment was given that our track has 4/4 time signature
+    # def get_chord_duration(self):
+    #     return self.mido_file.ticks_per_beat * 2
 
     def get_average_octave(self) -> int:
         amount = 0
@@ -272,7 +268,8 @@ class Song:
                 if msg.type == "note_on":
                     amount += 1
                     sum_octaves += msg.note // 12
-        return sum_octaves // amount
+        return max(0, sum_octaves // amount - 1)
+        # return sum_octaves // amount
 
     def get_key(self):
         return self.key.get_key()
@@ -305,7 +302,7 @@ class Song:
         # print(result)
         return list(map(lambda x: x[2], result))
 
-    def save_with_accompaniment(self, chords, out_file_name):
+    def save_with_accompaniment(self, chords, out_file_name: str):
         average_velocity = self.get_average_velocity()
         average_octave = self.get_average_octave()
         accompaniment = mido.MidiTrack()
@@ -328,12 +325,10 @@ class Song:
             Message("note_off", channel=0, note=average_octave * 12 + chords[0][2], velocity=0, time=0))
 
         flag = False
-
         for first, second, third in chords[1:]:
             if first is None and second is None and third is None:
                 flag = True
                 continue
-
             if flag:
                 accompaniment.append(
                     Message("note_on", channel=0, note=average_octave * 12 + first, velocity=average_velocity,
@@ -350,7 +345,6 @@ class Song:
                     Message("note_on", channel=0, note=average_octave * 12 + second, velocity=average_velocity, time=0))
                 accompaniment.append(
                     Message("note_on", channel=0, note=average_octave * 12 + third, velocity=average_velocity, time=0))
-
             accompaniment.append(
                 Message("note_off", channel=0, note=average_octave * 12 + first, velocity=0, time=BARLEN_DIVIDED_4))
             accompaniment.append(
@@ -359,10 +353,7 @@ class Song:
                 Message("note_off", channel=0, note=average_octave * 12 + third, velocity=0, time=0))
         accompaniment.append(MetaMessage('end_of_track', time=0))
         self.mido_file.tracks.append(accompaniment)
-
-        # note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-        note_num, tonic = self.key.get_key()
-        self.mido_file.save(f"{out_file_name}_{note_names[note_num]}_{tonic}.midi")
+        self.mido_file.save(f"{out_file_name}.midi")
 
 
 class Gene:  # аккорд
@@ -430,7 +421,9 @@ class Chromosome:
         # if chords are not diminished and not sus2 and not sus4
         for gene in self.genes:
             if not gene.chord.is_dim() and not gene.chord.is_sus2() and not gene.chord.is_sus4():
-                counter += 6
+                counter += 20
+            else:
+                counter -= 10
 
         # if song is empty and prev chord == current chord
         for i in range(1, len(self.genes)):
@@ -465,9 +458,16 @@ class Chromosome:
         return counter
 
     def mutate(self):
+        # kind = choice(["mutate", "mutate", "shuffle"])
+        # if kind == "mutate":
         for i in range(len(self.genes)):
             self.genes[i].mutate()
+        # else:
+        #     shuffle(self.genes)
         return self
+
+    def copy(self):
+        return Chromosome(self.genes)
 
 
 class Generator:
@@ -479,6 +479,8 @@ class Generator:
         self.population_size = population_size
         self.number_of_generations = number_of_generations
         self.out_file_name = out_file_name
+
+        # self.generate()
 
     def create_initial_population(self):
         initial_population = [Chromosome([Gene(choice(self.tonic_chords)) for _ in range(self.song.len_in_bars4)])
@@ -500,7 +502,9 @@ class Generator:
         return [chromosome.fitness(self.song.divided, self.tonic_chords) for chromosome in population]
 
     def next_population(self, prev_population: List[Chromosome]) -> List[Chromosome]:
-        new_population = deepcopy(prev_population)
+        # new_population = deepcopy(prev_population)
+        new_population = prev_population
+
         zipped = list(sorted(zip(self.get_population_fitness(prev_population), prev_population), key=lambda x: -x[0]))
 
         best_parent1, best_parent2 = zipped[0][1], zipped[1][1]
@@ -509,8 +513,8 @@ class Generator:
                                                       best_parent2)  # can try with random from prev_population
             new_population.append(child1)
             new_population.append(child2)
-            new_population.append(deepcopy(child1).mutate())
-            new_population.append(deepcopy(child2).mutate())
+            new_population.append(child1.copy().mutate())
+            new_population.append(child2.copy().mutate())
 
         zipped_huge_population = list(
             sorted(zip(self.get_population_fitness(new_population), new_population), key=lambda x: -x[0]))
@@ -525,48 +529,54 @@ class Generator:
 
         best_chromosome = population[0]
         best_chromosome_chords = list(map(lambda x: x.chord.notes, best_chromosome.genes))
-
         for i in range(len(best_chromosome_chords)):
             if len(self.song.divided[i]) == 0:
                 best_chromosome_chords[i] = [None, None, None]
+        # print(best_chromosome_chords[0])
+        # print(self.song.get_key())
+        # print(self.tonic_chords[0])
         self.song.save_with_accompaniment(best_chromosome_chords, self.out_file_name)
 
 
-# generator = Generator(INP, 600, 300)  # размер популяции, кол-во поколений
+# a = generator.create_initial_population()
+
+generator = Generator(INP, 1000, 300, "1")  # размер популяции, кол-во поколений
+generator.generate()
+# s = Song(INP)
+# ind, t = s.get_key()
+# print(["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][ind], t)
 
 import argparse
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Accompaniment adder')
-    parser.add_argument('file', type=str, help="Name of source file")
-    parser.add_argument(
-        '--population', '-n',
-        type=int,
-        default=600,
-        help='Provide the size of initial population (default: 600)'
-    )
-    parser.add_argument(
-        '--iterations', '-i',
-        type=int,
-        default=100,
-        help='Provide the amount of iterations (default: 100)'
-    )
-
-    parser.add_argument(
-        '--out', '-o',
-        type=str,
-        default=None,
-        help='Name of output file'
-    )
-    args = parser.parse_args()
-    # print(args.file)
-    # print(args.population)
-    # print(args.iterations)
-    # print(args.out)
-    output_file_name = args.out if args.out is not None else f"out_{str(args.file).split('.')[0]}"
-    Generator(INP, args.population, args.iterations, output_file_name).generate()
-# a = generator.create_initial_population()
-
+# if __name__ == '__main__':
+#     parser = argparse.ArgumentParser(description='Accompaniment adder')
+#     parser.add_argument('file', type=str, help="Name of source file")
+#     parser.add_argument(
+#         '--population', '-n',
+#         type=int,
+#         default=600,
+#         help='Provide the size of initial population (default: 600)'
+#     )
+#     parser.add_argument(
+#         '--iterations', '-i',
+#         type=int,
+#         default=100,
+#         help='Provide the amount of iterations (default: 100)'
+#     )
+#
+#     parser.add_argument(
+#         '--out', '-o',
+#         type=str,
+#         default=None,
+#         help='Name of output file'
+#     )
+#     args = parser.parse_args()
+#     print(args.file)
+#     print(args.population)
+#     print(args.iterations)
+#     print(args.out)
+#     output_file_name = args.out if args.out is not None else f"out_{str(args.file).split('.')[0]}"
+#     Generator(INP, args.population, args.iterations, output_file_name).generate()
 
 # a = [1, 2, 3]
 # b = [3, 4, 5]
