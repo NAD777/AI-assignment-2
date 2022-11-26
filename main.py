@@ -1,31 +1,18 @@
-from copy import copy
-
-import music21 as music
-
+from copy import copy, deepcopy
 import mido
 from mido import Message, MidiTrack, MetaMessage
 from math import sqrt
 from random import randint, choice
 from typing import List, Tuple, Type
-from copy import deepcopy
 from tqdm import tqdm
+import argparse
 
-INP = "barbiegirl_mono.mid"
-# INP = "input1.mid"
-# OUT = "output.mid"
-
-res = music.converter.parse(INP)
-
-# print("Tonic:", res.analyze('key'))
-# print("Tonic:", res.analyze('key').tonic.midi)
-
+"""Constant that define the length of one chord in accompaniment"""
 BARLEN_DIVIDED_4 = 384
 
+note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
-def mido_to_note(mido_note):
-    return mido_note % 12
-
-
+"""Shifts with them help we can generate: minor, major and others things for one note"""
 OFFSETS = {
     'minor': {
         'triad': [0, 3, 7],
@@ -42,14 +29,18 @@ OFFSETS = {
     "sus2": [0, 2, 7],
     "sus4": [0, 5, 7]
 }
-note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
-def circle_permutation(array):
-    return array[1:] + [array[0]]
+def mido_to_note(mido_note):
+    """Function that translates note from mido to the number of note on piano ignoring octave"""
+    return mido_note % 12
 
 
 class Chord:
+    """
+    Class that holds notes of chord, lad - major or minor and step - number of accord in enharmonic keys
+    """
+
     def __init__(self, root_note, lad, step):
         self.root_note = root_note
         self.lad = lad  # major or minor
@@ -107,22 +98,30 @@ class Chord:
             '˙' if self.is_dim() else "")
 
     def __contains__(self, note: int):
+        """
+        Operator overload for 'in' operation
+        :param note: note in integer format
+        :return: true if this chord contains note else false
+        """
         return note in self.notes
 
     def __eq__(self, other):
+        """
+        Operator overload for equal sign
+        :param other: other chord
+        :return: true if other chord equal to this
+        """
         return self.notes == other.notes
 
 
 class MainKey:
+    """
+    The class that defines key of the given song.
+    For defining the key of the song I am using statistic approach from http://rnhart.net/articles/key-finding/
+    Coefficient I took from music21 library
+    """
     notes = []
     note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-    # major_profile = [("C", 6.35), ("C#", 2.23), ("D", 3.48), ("D#", 2.33), ("E", 4.38), ("F", 4.09), ("F#", 2.52),
-    #                  ("G", 5.19), ("G#", 2.39), ("A", 3.66), ("A#", 2.29), ("B", 2.88)]
-    # minor_profile = [("A", 6.33), ("A#", 2.68), ("B", 3.52), ("C", 5.38), ("C#", 2.60), ("D", 3.53), ("D#", 2.54),
-    #                  ("E", 4.75), ("F", 3.98), ("F#", 2.69), ("G", 3.34), ("G#", 3.17)]
-
-    # minor_profile = [("C", 6.33), ("C#", 2.68), ("D", 3.52), ("D#", 5.38), ("E", 2.60), ("F", 3.53), ("F#", 2.54),
-    #                  ("G", 4.75), ("G#", 3.98), ("A", 2.69), ("A#", 3.34), ("B", 3.17)]
 
     major_profile = [("C", 17.7661), ("C#", 0.145624), ("D", 14.9265), ("D#", 0.160186), ("E", 19.8049), ("F", 11.3587),
                      ("F#", 0.291248),
@@ -133,6 +132,10 @@ class MainKey:
                      ("E", 18.6161), ("F", 4.56621), ("F#", 1.93186), ("G", 7.37619), ("G#", 1.75623)]
 
     def __init__(self, mido_file: mido.MidiFile):
+        """
+        Constructor for class MainKey, it finds duration of each note in song
+        :param mido_file: opened file name in midi format
+        """
         notes = []
         for i, track in enumerate(mido_file.tracks):
             for msg in track:
@@ -145,7 +148,17 @@ class MainKey:
         self.duration = list(zip(self.note_names, self.duration))
         # self.duration = list(zip(self.note_names, [432, 231, 0, 405, 12, 316, 4, 126, 612, 0, 191, 1]))
 
-    def _calculate_correlation(self, x, y):
+    def __circle_permutation(self, array):
+        """Supporting function that make circular permutation of array"""
+        return array[1:] + [array[0]]
+
+    def __calculate_correlation(self, x, y):
+        """
+        Calculates correlation formula for given x and y
+        :param x: one coefficient from major or minor profile
+        :param y: duration of the note
+        :return: value of correlation
+        """
         mean_x = sum(x) / len(x)
         mean_y = sum(y) / len(y)
 
@@ -165,59 +178,61 @@ class MainKey:
 
     def get_key(self):
         '''
-        http://rnhart.net/articles/key-finding/
-        :return: key
+        Function that defines key.
+        The key-finding algorithm calculates a correlation coefficient for each possible major and minor key by pairing
+        the pitch class values to the profile values for the key in question
+        :return: key of the song
         '''
         max_r = -1e9
         is_major = False
         key_note = 0
-        d = dict()
-        for el in self.note_names:
-            d[el] = -1e9
-            d[el + 'm'] = -1e9
         major_x = self.major_profile
-        # print(self.duration)
         dur = copy(self.duration)
         for i in range(12):
-            r = self._calculate_correlation(list(map(lambda x: x[1], major_x)),
-                                            list(map(lambda x: x[1], dur)))
-            d[dur[0][0]] = max(d[dur[0][0]], r)
+            r = self.__calculate_correlation(list(map(lambda x: x[1], major_x)),
+                                             list(map(lambda x: x[1], dur)))
             if max_r < r:
                 max_r = r
                 is_major = True
                 key_note = i
-            dur = circle_permutation(dur)
+            dur = self.__circle_permutation(dur)
 
         minor_x = self.minor_profile
         dur = copy(self.duration)
         for i in range(12):
-            r = self._calculate_correlation(list(map(lambda x: x[1], minor_x)),
-                                            list(map(lambda x: x[1], dur)))
-            d[dur[0][0] + 'm'] = max(d[dur[0][0] + 'm'], r)
+            r = self.__calculate_correlation(list(map(lambda x: x[1], minor_x)),
+                                             list(map(lambda x: x[1], dur)))
             if max_r < r:
                 max_r = r
                 is_major = False
                 key_note = i
-            dur = circle_permutation(dur)
+            dur = self.__circle_permutation(dur)
 
-        key_sym = list(sorted(d.items(), key=lambda x: -x[1]))[0][0]
-        # print(note_names[key_note])
         return key_note, "major" if is_major else "minor"
 
 
 class GoodChords:
+    """Class that holds well-sounding chords for the given key"""
     major = [0, 2, 4, 5, 7, 9, 11]
     minor = [0, 2, 3, 5, 7, 8, 10]
     note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
     def __init__(self, key_note):
-        self.key_note, self.lad = key_note
+        """
+        Constructor for class GoodChords
+        :param key_note: tuple of keynote in integer representation and scale of keynote
+        """
+        self.key_note, self.scale = key_note
         self.good_chords = self.get()
 
     def get(self):
-        offsets = self.major if self.lad == "major" else self.minor
+        """
+        Function that generates and returns well-sounding chords for keynote
+        :return: list of Chord classes
+        """
+        offsets = self.major if self.scale == "major" else self.minor
         good_chords = []
-        if self.lad == "major":
+        if self.scale == "major":
             good_chords.append(Chord((self.key_note + offsets[0]) % 12, "major", 1).get_triad())
             good_chords.append(Chord((self.key_note + offsets[1]) % 12, "minor", 2).get_triad())
             good_chords.append(Chord((self.key_note + offsets[2]) % 12, "minor", 3).get_triad())
@@ -225,7 +240,7 @@ class GoodChords:
             good_chords.append(Chord((self.key_note + offsets[4]) % 12, "major", 5).get_triad())
             good_chords.append(Chord((self.key_note + offsets[5]) % 12, "minor", 6).get_triad())
             good_chords.append(Chord((self.key_note + offsets[6]) % 12, "major", 7).get_dim())
-        if self.lad == "minor":
+        if self.scale == "minor":
             good_chords.append(Chord((self.key_note + offsets[0]) % 12, "minor", 1).get_triad())
             good_chords.append(Chord((self.key_note + offsets[1]) % 12, "major", 2).get_dim())
             good_chords.append(Chord((self.key_note + offsets[2]) % 12, "major", 3).get_triad())
@@ -234,10 +249,6 @@ class GoodChords:
             good_chords.append(Chord((self.key_note + offsets[5]) % 12, "major", 6).get_triad())
             good_chords.append(Chord((self.key_note + offsets[6]) % 12, "major", 7).get_triad())
         return good_chords
-
-    def get_tuples(self):
-        # for test, need changes
-        return [el.get_triad() for el in self.good_chords]
 
 
 class Song:
@@ -251,40 +262,52 @@ class Song:
         self.divided = self.divide_track()
 
     def get_average_velocity(self):
+        """
+        Function that calculates the average velocity of the song
+        :return: average velocity of song
+        """
         list_of_velocities = list(map(lambda x: x.velocity,
                                       filter(lambda x: not x.is_meta and x.type == "note_on", self.mido_file)))
         return sum(list_of_velocities) // len(list_of_velocities)
 
-    def get_tempo(self):
+    def get_tempo(self) -> int:
+        """
+        Function that return tempo of the song
+        :return: tempo: int
+        """
         element = list(map(lambda x: x,
                            filter(lambda x: x.is_meta and x.type == "set_tempo", self.mido_file)))[0]
         return element.tempo
 
-    # in assignment was given that our track has 4/4 time signature
-    def get_chord_duration(self):
-        return self.mido_file.ticks_per_beat * 2
-
     def get_average_octave(self) -> int:
-        amount = 0
-        sum_octaves = 0
-        for i, track in enumerate(self.mido_file.tracks):
+        """
+        Function that calculates the average octave of the song
+        :return: average octave number
+        """
+        messages = []
+        for track in self.mido_file.tracks:
             for msg in track:
-                if msg.type == "note_on":
-                    amount += 1
-                    sum_octaves += msg.note // 12
-        return sum_octaves // amount
+                messages.append(msg)
+        octaves = list(map(lambda x: x.note // 12, filter(lambda x: x.type == "note_on", messages)))
+        return sum(octaves) // len(octaves)
 
     def get_key(self):
+        """
+        Getter for song key
+        :return: key
+        """
         return self.key.get_key()
 
     def divide_track(self):
+        """
+        Function that makes array of notes in every bar divided by 4 interval
+        :return: array of notes in integer format in every bar divided by 4 interval
+        """
         notes_on = list(map(lambda x: (mido_to_note(x.note), x.time),
                             filter(lambda x: x.type == 'note_on', self.mido_file.tracks[1][2:])))
         notes_off = list(map(lambda x: (mido_to_note(x.note), x.time),
                              filter(lambda x: x.type == 'note_off', self.mido_file.tracks[1][2:])))
         zipped = list(zip(notes_on, notes_off))
-        # print(*zipped[:6], sep="\n")
-        # zipped = zipped[:6]
         sum_bars = 0
         for (note, btime), (note, etime) in zipped:
             sum_bars += btime + etime
@@ -293,7 +316,6 @@ class Song:
                   range(sum_bars // BARLEN_DIVIDED_4 + 1)]
         self.len_in_bars4 = sum_bars // BARLEN_DIVIDED_4
         cur_sum = 0
-        index = 0
         for (note, btime), (note, etime) in zipped:
             cur_sum += btime
             for ind, (begin, end, _) in enumerate(result):
@@ -302,10 +324,14 @@ class Song:
                     if cur_sum + etime > end:
                         result[(cur_sum + etime) // BARLEN_DIVIDED_4][2].append(note)
             cur_sum += etime
-        # print(result)
         return list(map(lambda x: x[2], result))
 
-    def save_with_accompaniment(self, chords, out_file_name):
+    def save_with_accompaniment(self, chords: List[Tuple[int, int, int]], out_file_name: str):
+        """
+        Function that saves the song with given accompaniment cords
+        :param chords: chords to add to accompaniment
+        :param out_file_name: file name of output file
+        """
         average_velocity = self.get_average_velocity()
         average_octave = self.get_average_octave()
         accompaniment = mido.MidiTrack()
@@ -328,7 +354,6 @@ class Song:
             Message("note_off", channel=0, note=average_octave * 12 + chords[0][2], velocity=0, time=0))
 
         flag = False
-
         for first, second, third in chords[1:]:
             if first is None and second is None and third is None:
                 flag = True
@@ -338,18 +363,14 @@ class Song:
                 accompaniment.append(
                     Message("note_on", channel=0, note=average_octave * 12 + first, velocity=average_velocity,
                             time=BARLEN_DIVIDED_4))
-                accompaniment.append(
-                    Message("note_on", channel=0, note=average_octave * 12 + second, velocity=average_velocity, time=0))
-                accompaniment.append(
-                    Message("note_on", channel=0, note=average_octave * 12 + third, velocity=average_velocity, time=0))
                 flag = False
             else:
                 accompaniment.append(
                     Message("note_on", channel=0, note=average_octave * 12 + first, velocity=average_velocity, time=0))
-                accompaniment.append(
-                    Message("note_on", channel=0, note=average_octave * 12 + second, velocity=average_velocity, time=0))
-                accompaniment.append(
-                    Message("note_on", channel=0, note=average_octave * 12 + third, velocity=average_velocity, time=0))
+            accompaniment.append(
+                Message("note_on", channel=0, note=average_octave * 12 + second, velocity=average_velocity, time=0))
+            accompaniment.append(
+                Message("note_on", channel=0, note=average_octave * 12 + third, velocity=average_velocity, time=0))
 
             accompaniment.append(
                 Message("note_off", channel=0, note=average_octave * 12 + first, velocity=0, time=BARLEN_DIVIDED_4))
@@ -360,16 +381,30 @@ class Song:
         accompaniment.append(MetaMessage('end_of_track', time=0))
         self.mido_file.tracks.append(accompaniment)
 
-        # note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         note_num, tonic = self.key.get_key()
         self.mido_file.save(f"{out_file_name}_{note_names[note_num]}_{tonic}.midi")
 
 
-class Gene:  # аккорд
+class Gene:
+    """CLass that defines the gene for genetic algorithm, in my case gene is one chord of the accompaniment"""
+
     def __init__(self, chord):
+        """
+        Gene constractor
+        :param chord: chord of the gene
+        """
         self.chord: Chord = chord
 
     def mutate(self):
+        """
+        Function that mutate current gene
+        if chord is diminished -> no mutation at all
+        Probability  mutation to
+            1/4      the first inverse
+            1/4      the second inverse
+            1/4      the suspended 2
+            1/4      the suspended 4
+        """
         mutate_name = ["inv1", "inv2", "sus2", "sus4"]
         if self.chord.is_dim():
             return
@@ -390,23 +425,46 @@ class Gene:  # аккорд
             self.chord = self.chord.get_second_inversion()
 
     def __contains__(self, item: int):
+        """
+        Operator overload for 'in' operator
+        :param item: specific not in integer value
+        :return: true if Gene (Chord) contains note (item) else false
+        """
         return item in self.chord
 
     def __eq__(self, other):
+        """
+        Operator overload for equals sign
+        :param other: other gene (chord)
+        :return: if this chord equals other return true else false
+        """
         return self.chord == other.chord
 
 
 class Chromosome:
+    """
+    Class that defines Chromosome of genetic algorithm, in my case chromosome is whole accompaniment for the song
+    """
     genes: List[Gene] = []
 
-    def __init__(self, genes):
+    def __init__(self, genes: List[Gene]):
+        """
+        Constructor for class Chromosome
+        :param genes: sequence of chords
+        """
         self.genes = genes
 
     def fitness(self, divided_song, tonic_chords) -> int:
+        """
+        Fitness function that can evaluate this chromosome (accompaniment) based on different rules
+        :param divided_song: array of notes in every bar divided by 4 interval
+        :param tonic_chords: well-sounding chords for this song key
+        :return: integer number that shows how good this accompaniment based, this evaluation based on different rules,
+        that written in report
+        """
         counter = 0
 
         # matching original quarter notes and generated
-
         for quarter, gen in zip(divided_song, self.genes):
             flag_no_match = True
             for note in quarter:
@@ -439,6 +497,7 @@ class Chromosome:
             else:
                 counter += 4
 
+        # check for searched well sound chords
         for i in range(len(self.genes) - 2):
             first, second, third = self.genes[i].chord, self.genes[i + 1].chord, self.genes[i + 2].chord
             if first == tonic_chords[6] and second == tonic_chords[1] and third == tonic_chords[0]:
@@ -446,11 +505,13 @@ class Chromosome:
             if first == tonic_chords[1] and second == tonic_chords[6] and third == tonic_chords[0]:
                 counter += 25
 
+        # check for that first chords of accompaniment is key chord
         if self.genes[0].chord == tonic_chords[0]:
             counter += 50
         else:
             counter -= 10
 
+        # check on the consecutive chords that have the notes
         for i in range(len(self.genes) - 1):
             first = self.genes[i].chord.notes
             second = self.genes[i + 1].chord.notes
@@ -465,15 +526,26 @@ class Chromosome:
         return counter
 
     def mutate(self):
+        """
+        Function that mutates all genes (chords) in this chromosome
+        :return: this object
+        """
         for i in range(len(self.genes)):
             self.genes[i].mutate()
         return self
 
 
 class Generator:
-    # populaton
-    # кол-во поколений
+    """Generator class that implements genetic algorithm"""
+
     def __init__(self, file_name: str, population_size: int, number_of_generations: int, out_file_name: str):
+        """
+        Constructor for Generator class
+        :param file_name: input file name
+        :param population_size: size of every population of algorithm
+        :param number_of_generations: the number of people we must produce
+        :param out_file_name: the name of output file
+        """
         self.song: Song = Song(file_name)
         self.tonic_chords = GoodChords(self.song.get_key()).get()
         self.population_size = population_size
@@ -481,26 +553,56 @@ class Generator:
         self.out_file_name = out_file_name
 
     def create_initial_population(self):
+        """
+        Function that returns the initial population of genetic algorithm
+        :return: array of Chromosomes
+        """
         initial_population = [Chromosome([Gene(choice(self.tonic_chords)) for _ in range(self.song.len_in_bars4)])
                               for _ in range(self.population_size)]
 
         return initial_population
 
-    def _crossover(self, first_chromosome, second_chromosome) -> Chromosome:
+    def _crossover(self, first_chromosome: Chromosome, second_chromosome: Chromosome) -> Chromosome:
+        """
+        Function that merges two chromosomes randomly: it takes suffix of random length
+        from first chromosome and complements the suffix of the second chromosome
+        :param first_chromosome: chromosome
+        :param second_chromosome: chromosome
+        :return:
+        """
         result = first_chromosome.genes[:randint(0, len(first_chromosome.genes) - 1)]
         result = result + second_chromosome.genes[len(result):]
         return Chromosome(result)
 
     def crossover_two_child(self, first_parent: Chromosome, second_parent: Chromosome) -> Tuple[Chromosome, Chromosome]:
+        """
+        Function that produces two children using crossover algorithm
+        first child = crossover(parent 1, parent 2)
+        second child = crossover(parent 2, parent 1)
+        :param first_parent: Chromosome
+        :param second_parent: Chromosome
+        :return: two children
+        """
         first_child = self._crossover(first_parent, second_parent)
         second_child = self._crossover(second_parent, first_parent)
         return first_child, second_child
 
     def get_population_fitness(self, population: List[Chromosome]) -> List[int]:
+        """
+        Function that calculates fitness function for each chromosome in population
+        :param population: list of Chromosomes
+        :return: list of ints every cell of it the value of fitness for corresponding chromosome[i]
+        """
         return [chromosome.fitness(self.song.divided, self.tonic_chords) for chromosome in population]
 
     def next_population(self, prev_population: List[Chromosome]) -> List[Chromosome]:
-        new_population = deepcopy(prev_population)
+        """
+        Function that produces next population of genetic algorithm based on previous population
+        makes selections, crossovers and mutations
+        :param prev_population:
+        :return: next population of genetic algoritm
+        """
+        new_population = prev_population
         zipped = list(sorted(zip(self.get_population_fitness(prev_population), prev_population), key=lambda x: -x[0]))
 
         best_parent1, best_parent2 = zipped[0][1], zipped[1][1]
@@ -519,6 +621,10 @@ class Generator:
         return new_result_population
 
     def generate(self):
+        """
+        Function that makes self.number_of_generations populations of genetic algorithm.
+        And save song with accompaniment.
+        """
         population = self.create_initial_population()
         for _ in tqdm(range(self.number_of_generations)):
             population = self.next_population(population)
@@ -532,11 +638,8 @@ class Generator:
         self.song.save_with_accompaniment(best_chromosome_chords, self.out_file_name)
 
 
-# generator = Generator(INP, 600, 300)  # размер популяции, кол-во поколений
-
-import argparse
-
 if __name__ == '__main__':
+    """Argument command line parser for working with program through console"""
     parser = argparse.ArgumentParser(description='Accompaniment adder')
     parser.add_argument('file', type=str, help="Name of source file")
     parser.add_argument(
@@ -559,82 +662,5 @@ if __name__ == '__main__':
         help='Name of output file'
     )
     args = parser.parse_args()
-    # print(args.file)
-    # print(args.population)
-    # print(args.iterations)
-    # print(args.out)
     output_file_name = args.out if args.out is not None else f"out_{str(args.file).split('.')[0]}"
-    Generator(INP, args.population, args.iterations, output_file_name).generate()
-# a = generator.create_initial_population()
-
-
-# a = [1, 2, 3]
-# b = [3, 4, 5]
-# print(a[:3])
-
-
-# def cross(a, b):
-#     arr = a[:len(a) // 2]
-#     arr = arr + b[len(arr):]
-#     print(arr)
-
-
-# cross(a, b)
-
-# gene1 = Gene(Chord(0, "major", 1).get_triad())
-# gene2 = Gene(Chord(0, "major", 1).get_triad())
-# print(gene1.chord == gene2.chord)
-
-# print(randint(1, 2))
-# song = Song(INP)
-# print(song.get_key(), sep="\n")
-# good_Chords = GoodChords(song.get_key())
-# print("Good tuples:", good_Chords.get_tuples())
-# print("\n")
-# arr = [1, 2, 3]
-# print(circle_permutation(arr))
-
-# print(song.get_average_velocity())
-# print(song.get_tempo())
-# print(song.get_chord_duration())
-
-# print("Octava", song.get_average_octave())
-#
-# print(song.divide_track())
-# print(list(zip(range(len(note_names)), note_names)))
-# song.save_with_accompaniment(good_Chords.get_tuples())
-# print(file)
-# print()
-# for el in file:
-#     print(type(el), el)
-# out = mido.MidiFile()
-# track_out = mido.MidiTrack()
-# out.tracks.append(track_out)
-# track_out.append(Message('note_on', channel=0, note=68, velocity=50, time=0))
-# track_out.append(Message('note_off', channel=0, note=68, velocity=50, time=500))
-# out.save(OUT)
-
-"""
-    Message('note_on', channel=0, note=68, velocity=50, time=0),
-    Message('note_on', channel=0, note=64, velocity=50, time=0),
-    Message('note_on', channel=0, note=68, velocity=50, time=0),
-    Message('note_on', channel=0, note=73, velocity=50, time=0),
-    Message('note_on', channel=0, note=69, velocity=50, time=0),
-    Message('note_on', channel=0, note=66, velocity=50, time=384),
-    Message('note_on', channel=0, note=63, velocity=50, time=0),
-    Message('note_on', channel=0, note=66, velocity=50, time=0),
-    Message('note_on', channel=0, note=71, velocity=50, time=0),
-    Message('note_on', channel=0, note=68, velocity=50, time=0),
-    Message('note_on', channel=0, note=66, velocity=50, time=0),
-    Message('note_on', channel=0, note=64, velocity=50, time=0),
-    Message('note_on', channel=0, note=64, velocity=50, time=384),
-    Message('note_on', channel=0, note=61, velocity=50, time=0),
-    Message('note_on', channel=0, note=66, velocity=50, time=0),
-    Message('note_on', channel=0, note=61, velocity=50, time=0),
-    Message('note_on', channel=0, note=66, velocity=50, time=384),
-    Message('note_on', channel=0, note=64, velocity=50, time=0),
-    Message('note_on', channel=0, note=68, velocity=50, time=0),
-    Message('note_on', channel=0, note=66, velocity=50, time=0),
-    20
-
-"""
+    Generator(args.file, args.population, args.iterations, output_file_name).generate()
