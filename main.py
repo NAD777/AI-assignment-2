@@ -1,9 +1,9 @@
 from copy import copy, deepcopy
 import mido
-from mido import Message, MidiTrack, MetaMessage
+from mido import Message, MetaMessage
 from math import sqrt
 from random import randint, choice
-from typing import List, Tuple, Type
+from typing import List, Tuple
 from tqdm import tqdm
 import argparse
 
@@ -140,13 +140,11 @@ class MainKey:
         for i, track in enumerate(mido_file.tracks):
             for msg in track:
                 notes.append(msg)
-        # print(*notes, sep="\n")
         self.duration = [0 for _ in range(12)]
         for el in notes:
             if el.type == "note_off":
                 self.duration[mido_to_note(el.note)] += el.time
         self.duration = list(zip(self.note_names, self.duration))
-        # self.duration = list(zip(self.note_names, [432, 231, 0, 405, 12, 316, 4, 126, 612, 0, 191, 1]))
 
     def __circle_permutation(self, array):
         """Supporting function that make circular permutation of array"""
@@ -177,12 +175,12 @@ class MainKey:
         return sum_numerator / sqrt(sum_denum_x * sum_denum_y)
 
     def get_key(self):
-        '''
+        """
         Function that defines key.
         The key-finding algorithm calculates a correlation coefficient for each possible major and minor key by pairing
         the pitch class values to the profile values for the key in question
         :return: key of the song
-        '''
+        """
         max_r = -1e9
         is_major = False
         key_note = 0
@@ -253,9 +251,11 @@ class GoodChords:
 
 class Song:
     def __init__(self, name_of_midi):
+        """
+        Constructor for Song class, that holds and does things related to initial melody that was given as input
+        :param name_of_midi: source midi file name
+        """
         self.mido_file = mido.MidiFile(name_of_midi, clip=True)
-        # for el in self.mido_file:
-        #     print(el)
         self.key = MainKey(self.mido_file)
         self.begin = self.mido_file.tracks[1][2].time
         self.len_in_bars4 = 0
@@ -318,12 +318,14 @@ class Song:
         cur_sum = 0
         for (note, btime), (note, etime) in zipped:
             cur_sum += btime
-            for ind, (begin, end, _) in enumerate(result):
-                if begin <= cur_sum < end:
-                    result[ind][2].append(note)
-                    if cur_sum + etime > end:
-                        result[(cur_sum + etime) // BARLEN_DIVIDED_4][2].append(note)
-            cur_sum += etime
+            save_cur_sum = cur_sum
+            while cur_sum < save_cur_sum + etime:
+                for ind, (begin, end, _) in enumerate(result):
+                    if begin <= cur_sum < end:
+                        result[ind][2].append(note)
+                cur_sum += BARLEN_DIVIDED_4
+            # cur_sum += etime
+            cur_sum = save_cur_sum + etime
         return list(map(lambda x: x[2], result))
 
     def save_with_accompaniment(self, chords: List[Tuple[int, int, int]], out_file_name: str):
@@ -354,15 +356,17 @@ class Song:
             Message("note_off", channel=0, note=average_octave * 12 + chords[0][2], velocity=0, time=0))
 
         flag = False
+        shift = 0
         for first, second, third in chords[1:]:
             if first is None and second is None and third is None:
+                shift += 1
                 flag = True
                 continue
-
             if flag:
                 accompaniment.append(
                     Message("note_on", channel=0, note=average_octave * 12 + first, velocity=average_velocity,
-                            time=BARLEN_DIVIDED_4))
+                            time=shift * BARLEN_DIVIDED_4))
+                shift = 0
                 flag = False
             else:
                 accompaniment.append(
@@ -386,7 +390,7 @@ class Song:
 
 
 class Gene:
-    """CLass that defines the gene for genetic algorithm, in my case gene is one chord of the accompaniment"""
+    """Class that defines the gene for genetic algorithm, in my case gene is one chord of the accompaniment"""
 
     def __init__(self, chord):
         """
@@ -646,7 +650,7 @@ if __name__ == '__main__':
         '--population', '-n',
         type=int,
         default=600,
-        help='Provide the size of initial population (default: 600)'
+        help='Provide the size of initial and successive populations (default: 600)'
     )
     parser.add_argument(
         '--iterations', '-i',
