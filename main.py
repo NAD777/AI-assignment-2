@@ -324,7 +324,6 @@ class Song:
                     if begin <= cur_sum < end:
                         result[ind][2].append(note)
                 cur_sum += BARLEN_DIVIDED_4
-            # cur_sum += etime
             cur_sum = save_cur_sum + etime
         return list(map(lambda x: x[2], result))
 
