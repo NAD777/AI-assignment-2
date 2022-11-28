@@ -1,0 +1,173 @@
+\documentclass[a4paper]{article}
+
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{hyperref}
+\usepackage[letterpaper,top=0.5cm,bottom=2cm,left=1cm,right=3cm,marginparwidth=1.75cm]{geometry}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily,
+  showstringspaces=false,
+  commentstyle=\color{red},
+  keywordstyle=\color{blue}
+}
+
+\title{Introduction to Artificial Intelligence \\ Assignment 2}
+
+\author{Anton Nekhaev BS21-07, \\ a.nekhaev@innopolis.university}
+
+\date{Fall 2022}
+
+\graphicspath{{Images/}}
+
+\begin{document}
+\maketitle
+
+\section{Manual for running my program}
+To begin with, you need to install requirement libraries (or take them from my github repository, link bellow) for execution of my program, here are they:
+\begin{center}
+    mido==1.2.10\\
+    tqdm==4.64.1
+\end{center}
+Tqdm just a library for fancy status bar.\\ \\
+I diceded to make my program as a console tool to make accompaniment for the melody. \\
+So, to run it, you can simply type in you console:
+\begin{lstlisting}[language=bash]
+    python3 AntonNekhaev.py {name_of_source_file}.midi
+\end{lstlisting}
+This command will produce output with standart name. \\
+\\
+Also you can specify several option parameters. List of them is below:
+\begin{lstlisting}[language=bash,caption={Output of python3 AntonNekhaev.py \  -- -- help (optinal part)}]
+    -h, --help            show this help message and exit
+
+    --population POPULATION, -n POPULATION
+        Provide the size of initial and successive populations (default: 600)
+    
+    --iterations ITERATIONS, -i ITERATIONS
+                          Provide the amount of iterations (default: 100)
+
+    --out OUT, -o OUT     Name of output file  
+\end{lstlisting}
+
+\section{Key detection algorithm}
+To define a song key I use a Krumhansl-Schmuckler key-finding algorithm
+according to \cite{keyalgorithm}. The idea behind it is that for a given key
+some notes are played more often that others. So, for every song I am
+calculating duration of every note in whole melody. And then find the
+correlation coefficient, which indicates the linear relationship, based on this
+formula:
+\begin{displaymath}
+	\begin{split}
+		R = \frac{\sum_{i = 1}^n(x_i - \overline{x})(y_i - \overline{y})}{\sqrt{\sum_{i = 1}^n(x_i - \overline{x})^2\cdot\sum_{i = 1}^n(y_i - \overline{y})^2}}, 
+	\end{split}
+\end{displaymath}
+where $x_i$ - duration of $i$ note, $\overline{x}$ - mean value of durations, about $y$ and $\overline{y}$ will be described below.\\
+In the key-finding algorithm $y$ represents a profile of a major key or a minor key. I use different values than \cite{keyalgorithm} because values in the article produse the wrong result for \path{barbiegirl_mono.midi}, used by me values we can be found below:
+% \begin{table}
+\newcommand{\celllen}{1.2cm}
+\captionof{table}{Major profile.}
+\begin{tabular}{ |p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|}
+    \hline
+    \path{do}&\path{do#}&\path{re}&\path{re#}&\path{mi}&\path{fa}&\path{fa#}&\path{so}&\path{so#}&\path{la}&\path{la#}&\path{ti}\\
+    \hline
+    17.7661&0.145624&14.9265&0.160186&19.8049&11.3587&0.291248&22.062&0.145624&8.15494&0.232998&4.95122\\
+    \hline
+\end{tabular}
+%     \caption{\label{major}Major profile.}
+% \end{table}
+
+% \begin{table}
+    % \newcommand{\celllen}{1.2cm}
+\captionof{table}{Minor profile.}
+\begin{tabular}{ |p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|p{\celllen}|}
+    \hline
+    \path{la}&\path{la#}&\path{ti}&\path{do}&\path{do#}&\path{re}&\path{re#}&\path{mi}&\path{fa}&\path{fa#}&\path{so}&\path{so#}\\
+    \hline
+    18.2648&0.737619&14.0499&16.8599&0.702494&14.4362&0.702494&18.6161&4.56621&1.93186&7.37619&1.75623\\
+    \hline
+\end{tabular}
+    % \caption{\label{minor}Minor profile.}
+% \end{table}
+% \newpage
+\\ \\  \\
+According to \cite{keyalgorithm}, by combining the pitch class values with the
+key's profile data, the key-finding algorithm determines a correlation
+coefficient for each potential major and minor key. Then it is simple to find
+the key of the song, it will have the greatest linear relatioonship among all
+others keys.\\
+Although this algorithm is based on empirical studies it allows you to get the
+right melody key.
+
+\section{Accompaniment generation algorithm}
+As accompaniment generation algorithm I choose the evolution algorithm. In my implementation there are classes that should be discussed:
+% So, for a gene I took a chord, for chromosome - the entire accompaniment. Thus, in my model the popultaion is a array of chromosomes. For mutation of chromosome I randomly mutate each gene of it.  
+\subsection{Gene}
+Gene is simply the one chord of the accompaniment, but gene has an ability for mutation. If chord in gene is diminished, there will be no mutation at all, in other case: in Table 3 you can find probabilities of mutation.
+
+\begin{center}
+    \captionof{table}{Probability of spesific mutation for gene}
+    \begin{tabular}{ |p{2cm}|p{4cm}|}
+        \hline
+        Probability&Mutation to\\
+        \hline
+        0.25&the first inverse\\
+        \hline
+        0.25&the second inverse\\
+        \hline
+        0.25&suspended 2\\
+        \hline
+        0.25&suspended 4\\
+        \hline
+    \end{tabular}    
+\end{center}
+\subsection{Chromosome}
+Each chromosome holds array of genes (chords of accompaniment), array has length that needed for accompanemnt of the initial melody. Also, chromosome can evaluate genes that it has by using fitness funtion (described below). In addition, the chromosome can mutate its genes, this process is quite simple, going through genes and asking the gene to promote itself.
+\subsection{Generator}
+Generator is one of the essential classes. In fact, the whole implementation of evalution algorithm iterations is there. So, it has such abilities:
+
+\begin{itemize}
+    \item Create ititial population of chromosomes of size that is specified by user
+    \item Crossover two chromosome. This process is pretty random, after we get $chromosome_1$, $chromosome_2$, we pick prefix from $chromosome_1$ of random length and suffix of $chromosome_2$ and produce the new $chromosome$ that will be of needed length of accompaniment.
+    \item Get population fitness. We simply call fitness function of each chromosome.
+    \item Produce next population based on previos population. As for me, It is the main funciton of this class. To construct the new population, it gets the sorted list of chromosome based on fitness function. Takes two best chromosomes and produces their childrens, mutate them, and add them and mutatet versions of them in new population array. Then again sort them all by fitness function. After all this steps we get array, which length $5 \ \times$ population size (user defined variable). So, we make a slice of best chromosomes, which lenght is population size. 
+    \item Produce $\textbf{n}$ iterations, where $n$ is user defined amount of generations, of the evolution algorithm.
+\end{itemize}
+
+\section{Detected keys for input files}
+For us were given 4 files: \path{barbiegirl_mono.mid}, \path{input1.mid},
+\path{input2.mid}, \path{input3.mid}. Now I would like to define the key of
+each melody:
+\begin{center}
+    \captionof{table}{Detected keys}
+    \begin{tabular}{ |p{5cm}|p{5cm}|}
+        \hline
+        Name of file&Detected key\\
+        \hline
+        \path{barbiegirl_mono.mid}&\path{C#m}\\
+        \hline
+        \path{input1.mid}&\path{Dm}\\
+        \hline
+        \path{input2.mid}&\path{F}\\
+        \hline
+        \path{input3.mid}&\path{Em}\\
+        \hline
+    \end{tabular}    
+\end{center}
+
+
+\section{Source code}
+Python code, together with midi files, \path{requirements.txt} and this report sources are available in
+my GitHub repository, the \href{https://github.com/NAD777/AI-assignment-2}{link}
+(just click on it).
+
+\begin{thebibliography}{9}
+    \bibitem{keyalgorithm}
+    R. Hart,  \emph{Key-finding algorithm}, 19-Aug-2012. [Online]. \href{http://rnhart.net/articles/key-finding/}{Avalible}: http://rnhart.net/articles/key-finding/. [Accessed: 26-Nov-2022]. 
+\end{thebibliography}
+\end{document}

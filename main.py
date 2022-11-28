@@ -2,9 +2,10 @@ from copy import copy, deepcopy
 import mido
 from mido import Message, MetaMessage
 from math import sqrt
-from random import randint, choice
+from random import randint, choice, random
 from typing import List, Tuple
 from tqdm import tqdm
+# import random
 import argparse
 
 """Constant that define the length of one chord in accompaniment"""
@@ -339,24 +340,30 @@ class Song:
         accompaniment.append(MetaMessage('track_name', name='Accompaniment', time=0))
         accompaniment.append(Message("program_change", channel=0, program=1, time=0))
 
+        begin_index = 0
+        while chords[begin_index][0] is None:
+            begin_index += 1
         accompaniment.append(
-            Message("note_on", channel=0, note=average_octave * 12 + chords[0][0], velocity=average_velocity,
+            Message("note_on", channel=0, note=average_octave * 12 + chords[begin_index][0], velocity=average_velocity,
                     time=self.begin))
         accompaniment.append(
-            Message("note_on", channel=0, note=average_octave * 12 + chords[0][1], velocity=average_velocity, time=0))
+            Message("note_on", channel=0, note=average_octave * 12 + chords[begin_index][1], velocity=average_velocity,
+                    time=0))
         accompaniment.append(
-            Message("note_on", channel=0, note=average_octave * 12 + chords[0][2], velocity=average_velocity, time=0))
+            Message("note_on", channel=0, note=average_octave * 12 + chords[begin_index][2], velocity=average_velocity,
+                    time=0))
 
         accompaniment.append(
-            Message("note_off", channel=0, note=average_octave * 12 + chords[0][0], velocity=0, time=BARLEN_DIVIDED_4))
+            Message("note_off", channel=0, note=average_octave * 12 + chords[begin_index][0], velocity=0,
+                    time=BARLEN_DIVIDED_4 - self.begin % BARLEN_DIVIDED_4))
         accompaniment.append(
-            Message("note_off", channel=0, note=average_octave * 12 + chords[0][1], velocity=0, time=0))
+            Message("note_off", channel=0, note=average_octave * 12 + chords[begin_index][1], velocity=0, time=0))
         accompaniment.append(
-            Message("note_off", channel=0, note=average_octave * 12 + chords[0][2], velocity=0, time=0))
+            Message("note_off", channel=0, note=average_octave * 12 + chords[begin_index][2], velocity=0, time=0))
 
         flag = False
         shift = 0
-        for first, second, third in chords[1:]:
+        for first, second, third in chords[begin_index + 1:]:
             if first is None and second is None and third is None:
                 shift += 1
                 flag = True
@@ -385,7 +392,7 @@ class Song:
         self.mido_file.tracks.append(accompaniment)
 
         note_num, tonic = self.key.get_key()
-        self.mido_file.save(f"{out_file_name}_{note_names[note_num]}_{tonic}.midi")
+        self.mido_file.save(f"{out_file_name}_{note_names[note_num]}_{tonic}.mid")
 
 
 class Gene:
@@ -400,7 +407,7 @@ class Gene:
 
     def mutate(self):
         """
-        Function that mutate current gene
+        Function that mutate current gene, we mutate only with 10% chance
         if chord is diminished -> no mutation at all
         Probability  mutation to
             1/4      the first inverse
@@ -408,6 +415,8 @@ class Gene:
             1/4      the suspended 2
             1/4      the suspended 4
         """
+        if random() < 0.1:
+            return
         mutate_name = ["inv1", "inv2", "sus2", "sus4"]
         if self.chord.is_dim():
             return
@@ -469,62 +478,25 @@ class Chromosome:
 
         # matching original quarter notes and generated
         for quarter, gen in zip(divided_song, self.genes):
-            flag_no_match = True
             for note in quarter:
                 if note in gen:
-                    flag_no_match = True
-                    counter += 12
-            counter -= (10 if flag_no_match else 0)
+                    counter += 50
 
         # check for two sequential chords
         for i in range(len(self.genes) - 1):
             if self.genes[i] == self.genes[i + 1]:
-                counter -= 10
+                counter -= 20
             else:
-                counter += 15
-
-        # check for tonic
-        for gene in self.genes:
-            if gene.chord in tonic_chords:
-                counter += 6
+                counter += 0
 
         # if chords are not diminished and not sus2 and not sus4
         for gene in self.genes:
-            if not gene.chord.is_dim() and not gene.chord.is_sus2() and not gene.chord.is_sus4():
-                counter += 6
-
-        # if song is empty and prev chord == current chord
-        for i in range(1, len(self.genes)):
-            if len(divided_song[i]) == 0 and self.genes[i] == self.genes[i - 1]:
-                counter += 10
-            else:
-                counter += 4
-
-        # check for searched well sound chords
-        for i in range(len(self.genes) - 2):
-            first, second, third = self.genes[i].chord, self.genes[i + 1].chord, self.genes[i + 2].chord
-            if first == tonic_chords[6] and second == tonic_chords[1] and third == tonic_chords[0]:
-                counter += 25
-            if first == tonic_chords[1] and second == tonic_chords[6] and third == tonic_chords[0]:
-                counter += 25
+            if gene.chord.is_sus2() or gene.chord.is_sus4():
+                counter -= 30
 
         # check for that first chords of accompaniment is key chord
         if self.genes[0].chord == tonic_chords[0]:
             counter += 50
-        else:
-            counter -= 10
-
-        # check on the consecutive chords that have the notes
-        for i in range(len(self.genes) - 1):
-            first = self.genes[i].chord.notes
-            second = self.genes[i + 1].chord.notes
-            uni = set(first).union(set(second))
-            if len(uni) == 1:
-                counter += 25
-            if len(uni) == 2:
-                counter += 10
-            if len(uni) == 0:
-                counter -= 10
 
         return counter
 
@@ -603,7 +575,7 @@ class Generator:
         Function that produces next population of genetic algorithm based on previous population
         makes selections, crossovers and mutations
         :param prev_population:
-        :return: next population of genetic algoritm
+        :return: next population of genetic algorithm
         """
         new_population = prev_population
         zipped = list(sorted(zip(self.get_population_fitness(prev_population), prev_population), key=lambda x: -x[0]))
@@ -612,15 +584,15 @@ class Generator:
         for _ in range(self.population_size):
             child1, child2 = self.crossover_two_child(best_parent1,
                                                       best_parent2)  # can try with random from prev_population
-            new_population.append(child1)
-            new_population.append(child2)
             new_population.append(deepcopy(child1).mutate())
             new_population.append(deepcopy(child2).mutate())
 
         zipped_huge_population = list(
             sorted(zip(self.get_population_fitness(new_population), new_population), key=lambda x: -x[0]))
-        new_result_population = list(map(lambda x: x[1], zipped_huge_population))[:self.population_size]
 
+        new_result_population = list(map(lambda x: x[1], zipped_huge_population))[:self.population_size]
+        arr = self.get_population_fitness(new_result_population)
+        average = sum(arr) / len(arr)
         return new_result_population
 
     def generate(self):
