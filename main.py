@@ -1,11 +1,10 @@
-from copy import copy, deepcopy
+from copy import deepcopy
 import mido
 from mido import Message, MetaMessage
 from math import sqrt
 from random import randint, choice, random
 from typing import List, Tuple
 from tqdm import tqdm
-# import random
 import argparse
 
 """Constant that define the length of the one chord in accompaniment"""
@@ -42,60 +41,122 @@ class Chord:
     Class that holds notes of chord, lad - major or minor and step - number of accord in enharmonic keys
     """
 
-    def __init__(self, root_note, lad, step):
+    def __init__(self, root_note, scale, step):
+        """
+        Constructor for Chord class
+        :param root_note: root note of accords
+        :param scale: minor or major
+        :param step: step of chord in table (from assignment)
+        """
         self.root_note = root_note
-        self.lad = lad  # major or minor
+        self.scale = scale  # major or minor
         self.step = step  # step of note
         self.notes = [0, 0, 0]
 
     def get_triad(self):
-        self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS[self.lad]['triad']]
+        """
+        Sets the notes of chord equal to the triad of this chord scale and root note
+        :return: this object
+        """
+        self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS[self.scale]['triad']]
         return self
 
     def get_first_inversion(self):
-        self.notes = [self.root_note + offset for offset in OFFSETS[self.lad]['first']]
+        """
+        Sets the notes of chord equal to the first inversion of this chord scale and root note
+        :return: this object
+        """
+        self.notes = [self.root_note + offset for offset in OFFSETS[self.scale]['first']]
         return self
 
     def get_second_inversion(self):
-        self.notes = [self.root_note + offset for offset in OFFSETS[self.lad]['second']]
+        """
+        Sets the notes of chord equal to the second inversion of this chord scale and root note
+        :return: this object
+        """
+        self.notes = [self.root_note + offset for offset in OFFSETS[self.scale]['second']]
         return self
 
     def get_dim(self):
+        """
+        Sets the notes of chord equal to the diminished chord with root note on this chord
+        :return: this object
+        """
         self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS["diminished"]]
         return self
 
     def get_sus2(self):
+        """
+        Sets the notes of chord equal to the suspended 2 chord with root note on this chord
+        :return: this object
+        """
         self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS["sus2"]]
         return self
 
     def get_sus4(self):
+        """
+        Sets the notes of chord equal to the suspended 4 chord with root note on this chord
+        :return: this object
+        """
         self.notes = [(self.root_note + offset) % 12 for offset in OFFSETS["sus4"]]
         return self
 
     def is_major(self):
-        return self.lad == 'major'
+        """
+        Check for scale of this chord
+        :return: true if this chord in major scale else false
+        """
+        return self.scale == 'major'
 
     def is_minor(self):
-        return self.lad == 'minor'
+        """
+        Check for scale of this chord
+        :return: true if this chord in minor scale else false
+        """
+        return self.scale == 'minor'
 
     def is_first_inversion(self):
-        return self.notes == [self.root_note + offset for offset in OFFSETS[self.lad]['first']]
+        """
+        Check is this chord is first inverse
+        :return: true if this chord is first inverse else false
+        """
+        return self.notes == [self.root_note + offset for offset in OFFSETS[self.scale]['first']]
 
     def is_second_inversion(self):
-        return self.notes == [self.root_note + offset for offset in OFFSETS[self.lad]['second']]
+        """
+        Check is this chord is second inverse
+        :return: true if this chord is second inverse else false
+        """
+        return self.notes == [self.root_note + offset for offset in OFFSETS[self.scale]['second']]
 
     def is_dim(self):
+        """
+        Check is this chord is diminished
+        :return: true if this chord is diminished else false
+        """
         return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["diminished"]]
 
     def is_sus2(self):
+        """
+        Check is this chord is suspended 2
+        :return: true if this chord is suspended 2 else false
+        """
         return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["sus2"]]
 
     def is_sus4(self):
+        """
+        Check is this chord is suspended 4
+        :return: true if this chord is suspended 4 else false
+        """
         return self.notes == [(self.root_note + offset) % 12 for offset in OFFSETS["sus4"]]
 
     def __str__(self):
+        """
+        Operator overload for str operation
+        :return: return this chord in human-readable format (used mainly for debugging)
+        """
         arr = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-        return arr[self.root_note % 12] + ('m' if self.lad == 'minor' else '') + (
+        return arr[self.root_note % 12] + ('m' if self.scale == 'minor' else '') + (
             '˙' if self.is_dim() else "")
 
     def __contains__(self, note: int):
@@ -118,16 +179,16 @@ class Chord:
 class MainKey:
     """
     The class that defines key of the given song.
-    For defining the key of the song I am using statistic approach from http://rnhart.net/articles/key-finding/
-    Coefficient I took from music21 library
+    For defining the key of the song I am using statistic approach from https://rnhart.net/articles/key-finding/
     """
-    notes = []
     note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
+    """Values for major profile of key defining algorithm"""
     major_profile = [("C", 17.7661), ("C#", 0.145624), ("D", 14.9265), ("D#", 0.160186), ("E", 19.8049), ("F", 11.3587),
                      ("F#", 0.291248),
                      ("G", 22.062), ("G#", 0.145624), ("A", 8.15494), ("A#", 0.232998), ("B", 4.95122)]
 
+    """Values for minor profile of key defining algorithm"""
     minor_profile = [("A", 18.2648), ("A#", 0.737619), ("B", 14.0499), ("C", 16.8599), ("C#", 0.702494), ("D", 14.4362),
                      ("D#", 0.702494),
                      ("E", 18.6161), ("F", 4.56621), ("F#", 1.93186), ("G", 7.37619), ("G#", 1.75623)]
@@ -167,15 +228,15 @@ class MainKey:
         for i in range(len(x)):
             sum_numerator += (x[i] - mean_x) * (y[i] - mean_y)
 
-        sum_denum_x = 0
+        sum_denumirator_x = 0
         for i in range(len(x)):
-            sum_denum_x += (x[i] - mean_x) ** 2
+            sum_denumirator_x += (x[i] - mean_x) ** 2
 
         sum_denum_y = 0
         for i in range(len(y)):
             sum_denum_y += (y[i] - mean_y) ** 2
 
-        return sum_numerator / sqrt(sum_denum_x * sum_denum_y)
+        return sum_numerator / sqrt(sum_denumirator_x * sum_denum_y)
 
     def get_key(self):
         """
@@ -214,9 +275,12 @@ class MainKey:
 
 class GoodChords:
     """Class that holds well-sounding chords for the given key"""
+
+    """major table offsets from assignment"""
     major = [0, 2, 4, 5, 7, 9, 11]
+
+    """minor table offsets from assignment"""
     minor = [0, 2, 3, 5, 7, 8, 10]
-    note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
     def __init__(self, key_note):
         """
@@ -253,6 +317,7 @@ class GoodChords:
 
 
 class Song:
+    """Class that holds information of the song and provide function to work with given melody"""
     def __init__(self, name_of_midi):
         """
         Constructor for Song class, that holds and does things related to initial melody that was given as input
