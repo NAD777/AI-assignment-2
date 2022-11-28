@@ -35,7 +35,8 @@ To begin with, you need to install requirement libraries (or take them from my g
     tqdm==4.64.1
 \end{center}
 Tqdm just a library for fancy status bar.\\ \\
-I diceded to make my program as a console tool to make accompaniment for the melody. \\
+Also, I think that should be mentioned that the program was tested on Python 3.11, but it should work on at least Python 3.9, given that all requirements are installed. \\ \\
+I decided to make my program as a console tool to make accompaniment for the melody. \\
 So, to run it, you can simply type in you console:
 \begin{lstlisting}[language=bash]
     python3 AntonNekhaev.py {name_of_source_file}.midi
@@ -68,7 +69,7 @@ formula:
 	\end{split}
 \end{displaymath}
 where $x_i$ - duration of $i$ note, $\overline{x}$ - mean value of durations, about $y$ and $\overline{y}$ will be described below.\\
-In the key-finding algorithm $y$ represents a profile of a major key or a minor key. I use different values than \cite{keyalgorithm} because values in the article produse the wrong result for \path{barbiegirl_mono.midi}, used by me values we can be found below:
+In the key-finding algorithm $y$ represents a profile of a major key or a minor key. I use different values than \cite{keyalgorithm} because values in the article produce the wrong result for \path{barbiegirl_mono.midi}, used by me values we can be found below:
 % \begin{table}
 \newcommand{\celllen}{1.2cm}
 \captionof{table}{Major profile.}
@@ -99,14 +100,14 @@ In the key-finding algorithm $y$ represents a profile of a major key or a minor 
 According to \cite{keyalgorithm}, by combining the pitch class values with the
 key's profile data, the key-finding algorithm determines a correlation
 coefficient for each potential major and minor key. Then it is simple to find
-the key of the song, it will have the greatest linear relatioonship among all
+the key of the song, it will have the greatest linear relationship among all
 others keys.\\
 Although this algorithm is based on empirical studies it allows you to get the
 right melody key.
 
 \section{Accompaniment generation algorithm}
 As accompaniment generation algorithm I choose the evolution algorithm. In my implementation there are classes that should be discussed:
-% So, for a gene I took a chord, for chromosome - the entire accompaniment. Thus, in my model the popultaion is a array of chromosomes. For mutation of chromosome I randomly mutate each gene of it.  
+% So, for a gene I took a chord, for chromosome - the entire accompaniment. Thus, in my model the population is a array of chromosomes. For mutation of chromosome I randomly mutate each gene of it.  
 \subsection{Gene}
 Gene is simply the one chord of the accompaniment, but gene has an ability for mutation. If chord in gene is diminished, there will be no mutation at all, in other case: in Table 3 you can find probabilities of mutation.
 
@@ -127,16 +128,27 @@ Gene is simply the one chord of the accompaniment, but gene has an ability for m
     \end{tabular}    
 \end{center}
 \subsection{Chromosome}
-Each chromosome holds array of genes (chords of accompaniment), array has length that needed for accompanemnt of the initial melody. Also, chromosome can evaluate genes that it has by using fitness funtion (described below). In addition, the chromosome can mutate its genes, this process is quite simple, going through genes and asking the gene to promote itself.
+Each chromosome holds array of genes (chords of accompaniment), array has length that needed for accompaniment of the initial melody. Also, chromosome can evaluate genes that it has by using fitness function (described below). In addition, the chromosome can mutate its genes, this process is quite simple, going through genes and asking the gene to promote itself.
 \subsection{Generator}
-Generator is one of the essential classes. In fact, the whole implementation of evalution algorithm iterations is there. So, it has such abilities:
+Generator is one of the essential classes. In fact, the whole implementation of evolution algorithm iterations is there. So, it has such abilities:
 
 \begin{itemize}
     \item Create ititial population of chromosomes of size that is specified by user
     \item Crossover two chromosome. This process is pretty random, after we get $chromosome_1$, $chromosome_2$, we pick prefix from $chromosome_1$ of random length and suffix of $chromosome_2$ and produce the new $chromosome$ that will be of needed length of accompaniment.
     \item Get population fitness. We simply call fitness function of each chromosome.
-    \item Produce next population based on previos population. As for me, It is the main funciton of this class. To construct the new population, it gets the sorted list of chromosome based on fitness function. Takes two best chromosomes and produces their childrens, mutate them, and add them and mutatet versions of them in new population array. Then again sort them all by fitness function. After all this steps we get array, which length $5 \ \times$ population size (user defined variable). So, we make a slice of best chromosomes, which lenght is population size. 
-    \item Produce $\textbf{n}$ iterations, where $n$ is user defined amount of generations, of the evolution algorithm.
+    \item Produce next population based on previous population. As for me, It is the main function of this class. To construct the new population, it gets the sorted list of chromosome based on fitness function. Takes two best chromosomes and produces their children, and add mutated versions of them in new population array. Then again sort them all by fitness function. After all this steps we get sorted array in descending order of fitness value (so, best chromosomes will be at the beginning of the array), which length $3 \ \times$ population size (user-defined variable), that consists of previous iteration chromosomes and mutations of two best fitness-scored chromosomes. So, we make a slice of best chromosomes, which length is population size. 
+    \item Produce $\textbf{n}$ iterations, where $n$ is user-defined amount of generations, of the evolution algorithm.
+\end{itemize}
+\subsection{Fitness function}
+Crucial function of evolution algorithm that estimate the chromosome, now I would like to introduce some rules, that was implemented. Disclaimer: I am not a musician at all $:)$ \\
+Function implemented as cumulative function, so, for some events I can reward, for others penalize. \\
+For this function I divide song in parts that equals length of bar divided by 4 (beat), this is the length of one chord in generated accompaniment.
+
+\begin{itemize}
+    \item Reward of 50 for each note in accompaniment that matches one of the note in original melody in this bit.
+    \item Penalty of 20 if two sequential chords (genes) are equal.
+    \item Penalty of 30 for every chord (gene) in accompaniment if it is sus2 or sus4.
+    \item Reward of 50 if the first chord (gene) of accompaniment is tonic chord (triad).
 \end{itemize}
 
 \section{Detected keys for input files}

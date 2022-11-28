@@ -8,7 +8,7 @@ from tqdm import tqdm
 # import random
 import argparse
 
-"""Constant that define the length of one chord in accompaniment"""
+"""Constant that define the length of the one chord in accompaniment"""
 BARLEN_DIVIDED_4 = 384
 
 note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -147,11 +147,13 @@ class MainKey:
                 self.duration[mido_to_note(el.note)] += el.time
         self.duration = list(zip(self.note_names, self.duration))
 
-    def __circle_permutation(self, array):
+    @staticmethod
+    def __circle_permutation(array):
         """Supporting function that make circular permutation of array"""
         return array[1:] + [array[0]]
 
-    def __calculate_correlation(self, x, y):
+    @staticmethod
+    def __calculate_correlation(x, y):
         """
         Calculates correlation formula for given x and y
         :param x: one coefficient from major or minor profile
@@ -486,8 +488,6 @@ class Chromosome:
         for i in range(len(self.genes) - 1):
             if self.genes[i] == self.genes[i + 1]:
                 counter -= 20
-            else:
-                counter += 0
 
         # if chords are not diminished and not sus2 and not sus4
         for gene in self.genes:
@@ -537,7 +537,8 @@ class Generator:
 
         return initial_population
 
-    def _crossover(self, first_chromosome: Chromosome, second_chromosome: Chromosome) -> Chromosome:
+    @staticmethod
+    def _crossover(first_chromosome: Chromosome, second_chromosome: Chromosome) -> Chromosome:
         """
         Function that merges two chromosomes randomly: it takes suffix of random length
         from first chromosome and complements the suffix of the second chromosome
@@ -591,8 +592,6 @@ class Generator:
             sorted(zip(self.get_population_fitness(new_population), new_population), key=lambda x: -x[0]))
 
         new_result_population = list(map(lambda x: x[1], zipped_huge_population))[:self.population_size]
-        arr = self.get_population_fitness(new_result_population)
-        average = sum(arr) / len(arr)
         return new_result_population
 
     def generate(self):
