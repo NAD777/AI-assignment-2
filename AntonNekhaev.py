@@ -1,4 +1,4 @@
-from copy import deepcopy
+from copy import deepcopy, copy
 import mido
 from mido import Message, MetaMessage
 from math import sqrt
