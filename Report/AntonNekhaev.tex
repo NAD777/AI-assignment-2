@@ -107,7 +107,7 @@ Although this algorithm is based on empirical studies it allows you to get the
 right melody key.
 
 \section{Accompaniment generation algorithm}
-As accompaniment generation algorithm I choose the evolution algorithm. In my implementation there are classes that should be discussed:
+As accompaniment generation algorithm I was using the evolution algorithm. In my implementation there are classes that should be discussed:
 % So, for a gene I took a chord, for chromosome - the entire accompaniment. Thus, in my model the population is a array of chromosomes. For mutation of chromosome I randomly mutate each gene of it.  
 \subsection{Gene}
 Gene is simply the one chord of the accompaniment, but gene has an ability for mutation. If chord in gene is diminished, there will be no mutation at all, in other case: in Table 3 you can find probabilities of mutation.
